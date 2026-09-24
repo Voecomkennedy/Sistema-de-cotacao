@@ -1091,6 +1091,14 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid var
  #v-pax-table input{padding:10px;min-width:0 !important}
 }
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none !important;scroll-behavior:auto !important}}
+
+.timing-status{font-size:.75rem;line-height:1.55;color:var(--mid);margin-top:8px;text-transform:none;letter-spacing:0}
+.timing-manual{display:flex;align-items:flex-start;gap:8px;font-size:.7rem;font-weight:600;line-height:1.5;text-transform:none;letter-spacing:0;margin-top:10px;cursor:pointer}
+.timing-manual input{flex:0 0 auto;margin-top:3px}
+.timing-connection{border:1px solid var(--border);border-radius:10px;padding:12px;margin:12px 0 18px;background:var(--light)}
+.timing-connection summary{cursor:pointer;color:var(--navy2);font-size:.78rem;font-weight:700;line-height:1.5}
+.timing-connection[open] summary{margin-bottom:16px}
+.timing-dates{align-items:start}
 </style>
 </head>
 <body>
@@ -1420,7 +1428,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid var
     </div>
     <div class="field-row">
       <div class="field">
-        <label for="p-data-ida">Data de Ida</label>
+        <label for="p-data-ida">Data local de saída — ida</label>
         <input type="date" id="p-data-ida" onchange="syncHotelCheckin();calcNoites()">
       </div>
       <div class="field">
@@ -1692,7 +1700,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid var
     </div>
     <div class="field-row">
       <div class="field">
-        <label for="p-data-volta">Data de Volta</label>
+        <label for="p-data-volta">Data local de saída — volta</label>
         <input type="date" id="p-data-volta" onchange="syncHotelCheckout();calcNoites()">
       </div>
       <div class="field">
@@ -3495,11 +3503,15 @@ function restaurarProposta(d) {
   tryRun('toggleIdadesBebes',    () => toggleIdadesBebes());
   if (d.idadesCriancas) d.idadesCriancas.forEach((v,i) => sv('p-crianca-idade-'+i, v));
   if (d.idadesBebes)    d.idadesBebes.forEach((v,i)    => sv('p-bebe-idade-'+i, v === 'menos de 1 ano' ? '0' : '1'));
-  showToast('Proposta restaurada! Edite e gere novamente.');
+  document.getElementById('p-somente-ida').checked = !!d.somenteIda;
+  toggleSomenteIda();
+  TimingUI.restore('proposta', d.timing);
+  showToast(d.timing ? 'Proposta restaurada! Edite e gere novamente.' : 'Proposta antiga: confira datas de chegada e durações antes de gerar.');
 }
 function restaurarVoucher(d) {
   // Aba visivel ANTES de preencher — evita erro em toggles que dependem de elementos no DOM ativo
   try { switchTab('voucher'); } catch(e) { console.warn('[VoeComKennedy] switchTab voucher:', e); }
+  limparVoucher(); // Do not reuse dates from a previously opened voucher.
   const tryRun = (label, fn) => { try { fn(); } catch(e) { console.warn('[VoeComKennedy] restaurarVoucher ['+label+']:', e); } };
   const sv = (id, v) => { const el = document.getElementById(id); if(el && v != null) el.value = v; };
   // Limpar pax rows
@@ -3538,7 +3550,7 @@ function restaurarVoucher(d) {
   sv('v-regime', d.regime); sv('v-cama', d.cama);
   sv('v-checkin-data', d.checkinISO); sv('v-checkin-hora', d.checkinHora);
   sv('v-checkout-data', d.checkoutISO); sv('v-checkout-hora', d.checkoutHora);
-  tryRun('calcNoitesVoucher', () => calcNoitesVoucher && calcNoitesVoucher());
+  tryRun('calcVNoites', () => calcVNoites());
   sv('v-comodidades', d.comodidades); sv('v-obs', d.obs);
   sv('v-cancel-hotel', d.cancelHotel); sv('v-cancel-voo', d.cancelVoo);
   // Datas ISO dos voos — restaurar se disponiveis
@@ -3550,7 +3562,8 @@ function restaurarVoucher(d) {
   if (d.voltaDataCheg1ISO) sv('v-volta-data-cheg1', d.voltaDataCheg1ISO);
   if (d.voltaDataDep2ISO)  sv('v-volta-data-dep2', d.voltaDataDep2ISO);
   if (d.voltaDataCheg2ISO) sv('v-volta-data-cheg2', d.voltaDataCheg2ISO);
-  showToast('Voucher restaurado! Edite e gere novamente.');
+  TimingUI.restore('voucher', d.timing);
+  showToast('Voucher restaurado! Confira as durações antes de gerar.');
 }
 
 // ── AUTO-PREENCHIMENTO VOUCHER (Colar tudo) ───────────────────────────────────
@@ -4388,6 +4401,7 @@ function selectIata(e, inputId, listId, code, city) {
   e.preventDefault();
   document.getElementById(inputId).value = code + ' \u2014 ' + city;
   document.getElementById(listId).classList.remove('open');
+  document.getElementById(inputId).dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 function hideAC(listId, delay) {
@@ -4415,30 +4429,17 @@ function fmtDateShort(isoStr) {
   return DIAS_PT[dt.getDay()] + ' ' + String(d).padStart(2,'0') + ' ' + MESES_PT[m-1];
 }
 
-function calcDuracao(depId, chegId, durId) {
-  const dep = document.getElementById(depId).value;
-  const cheg = document.getElementById(chegId).value;
-  if (!dep || !cheg) return;
-  const [dh,dm] = dep.split(':').map(Number);
-  const [ch,cm] = cheg.split(':').map(Number);
-  let mins = (ch*60+cm) - (dh*60+dm);
-  if (mins < 0) mins += 24*60; // overnight
-  const h = Math.floor(mins/60), m = mins%60;
-  const dur = document.getElementById(durId);
-  if (!dur.dataset.manual) dur.value = h + 'h ' + String(m).padStart(2,'0') + 'm';
+function calcDuracao() {
+  // Never subtract local clock readings without dates and airport time zones.
+  window.TimingUI?.refresh();
 }
 
 function syncHotelCheckin() {
   const v = document.getElementById('p-data-ida').value;
   document.getElementById('p-hotel-checkin').value = fmtDateShort(v);
-  // Calendário da volta começa a partir da data de ida
-  const volta = document.getElementById('p-data-volta');
-  if (v) {
-    volta.min = v;
-    if (volta.value && volta.value < v) volta.value = '';
-  } else {
-    volta.min = '';
-  }
+  // Local calendar dates cannot be ordered across the international date line.
+  // TimingUI validates the actual instants instead.
+  document.getElementById('p-data-volta').removeAttribute('min');
   calcNoites();
 }
 
@@ -4456,13 +4457,6 @@ function calcNoites() {
   if (diff > 0) document.getElementById('p-hotel-noites').value = diff;
 }
 
-// Allow manual override on duracao fields
-['p-duracao-ida','p-duracao-volta'].forEach(id => {
-  document.addEventListener('DOMContentLoaded', () => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener('input', function() { this.dataset.manual = this.value ? '1' : ''; });
-  });
-});
 
 function abrirLinkAereo() {
   const url = document.getElementById('p-link-aereo').value.trim();
@@ -5131,6 +5125,8 @@ function onPaxChange() {
 }
 
 function gerarProposta() {
+  if (!window.TimingUI?.ready) { showToast('O cálculo de fusos não carregou. Atualize a página antes de gerar.'); return; }
+  if (!TimingUI.validate('proposta')) return;
   const cliente = document.getElementById('p-cliente').value.trim();
   if (!cliente) { showToast('Informe o nome do cliente.'); return; }
   const orig = document.getElementById('p-orig').value.trim();
@@ -5187,6 +5183,9 @@ function gerarProposta() {
   }
 
   const dados = {
+    timing: TimingUI.snapshot('proposta'),
+    dataChegadaIda: fmtDatePT(document.getElementById('p-data-chegada-ida').value),
+    dataChegadaVolta: fmtDatePT(document.getElementById('p-data-chegada-volta').value),
     cliente,
     adultos, criancas, bebes, totalPax,
     idadesCriancas, idadesBebes,
@@ -5508,9 +5507,10 @@ body{font-family:'Inter',Helvetica,Arial,sans-serif;background:#f0f2f5;color:var
               <div class="voo-sigla">${esc(iataOrig)}</div>
               <div class="voo-cidade">${esc(cidadeOrig)}</div>
             </div>
-            <div class="voo-linha"><div class="voo-linha-bar"></div>${d.durIda?`<span class="voo-duracao">${esc(d.durIda)}</span>`:''}</div>
+            <div class="voo-linha"><div class="voo-linha-bar"></div>${d.durIda?`<span class="voo-duracao">Total: ${esc(d.durIda)}</span>`:''}</div>
             <div class="voo-ponto">
               ${d.chegIda?`<div class="voo-hora">${esc(d.chegIda)}</div>`:''}
+              ${d.dataChegadaIda?`<div class="voo-cidade">Chegada: ${esc(d.dataChegadaIda)}</div>`:''}
               <div class="voo-sigla">${esc(iataDest)}</div>
               <div class="voo-cidade">${esc(cidadeDest)}</div>
             </div>
@@ -5546,9 +5546,10 @@ body{font-family:'Inter',Helvetica,Arial,sans-serif;background:#f0f2f5;color:var
               <div class="voo-sigla">${esc(iataOrigVolta)}</div>
               <div class="voo-cidade">${esc(cidadeOrigVolta)}</div>
             </div>
-            <div class="voo-linha"><div class="voo-linha-bar"></div>${d.durVolta?`<span class="voo-duracao">${esc(d.durVolta)}</span>`:''}</div>
+            <div class="voo-linha"><div class="voo-linha-bar"></div>${d.durVolta?`<span class="voo-duracao">Total: ${esc(d.durVolta)}</span>`:''}</div>
             <div class="voo-ponto">
               ${d.chegVolta?`<div class="voo-hora">${esc(d.chegVolta)}</div>`:''}
+              ${d.dataChegadaVolta?`<div class="voo-cidade">Chegada: ${esc(d.dataChegadaVolta)}</div>`:''}
               <div class="voo-sigla">${esc(iataDestVolta)}</div>
               <div class="voo-cidade">${esc(cidadeDestVolta)}</div>
             </div>
@@ -5718,6 +5719,9 @@ function limparProposta() {
   document.getElementById('p-parada-ida').value = 'direto';
   document.getElementById('p-parada-volta').value = 'direto';
   calcLimpar();
+  document.getElementById('p-somente-ida').checked = false;
+  toggleSomenteIda();
+  window.TimingUI?.restore('proposta');
 }
 
 // ── ABA VOUCHER ───────────────────────────────────────────────────────────────
@@ -5799,11 +5803,16 @@ function limparVoucher() {
   document.getElementById('v-pax-rows').innerHTML = '';
   vPaxCount = 0;
   addVPaxRow();
+  document.getElementById('v-ida-parada').value = 'direto';
+  document.getElementById('v-volta-parada').value = 'direto';
+  window.TimingUI?.restore('voucher');
 }
 
 function vg(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
 
 function gerarVoucher() {
+  if (!window.TimingUI?.ready) { showToast('O cálculo de fusos não carregou. Atualize a página antes de gerar.'); return; }
+  if (!TimingUI.validate('voucher')) return;
   const hotel = vg('v-hotel');
   if (!hotel) { showToast('Informe o nome do hotel.'); return; }
   const ci = document.getElementById('v-checkin-data').value;
@@ -5816,6 +5825,7 @@ function gerarVoucher() {
   const noitesNum = (new Date(co) - new Date(ci)) / (1000*60*60*24);
 
   const d = {
+    timing: TimingUI.snapshot('voucher'),
     num: numVoucher,
     status: vg('v-status') || 'PAGO',
     pagamento: vg('v-pagamento'),
@@ -6259,5 +6269,8 @@ document.getElementById('baseUrl').addEventListener('change', function() {
   localStorage.setItem('vck_base_url', this.value.trim());
 });
 </script>
+<script src="js/airport-timezones.js?v=20260924-1"></script>
+<script src="js/flight-time.js?v=20260924-1"></script>
+<script src="js/timing-form.js?v=20260924-1"></script>
 </body>
 </html>
