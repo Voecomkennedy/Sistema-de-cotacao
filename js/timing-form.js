@@ -6,6 +6,66 @@
   const checked = id => !!$(id)?.checked;
   const groups = [];
   const addedFields = { proposta: [], voucher: [] };
+  const dates = new Map();
+  let restoring = false;
+  const localToday = () => { const d = new Date(); return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-'); };
+  function setAuto(id, next) {
+    const el = $(id); if (!el || !next || restoring) return;
+    const state = dates.get(id);
+    if ((!state && !el.value) || (state?.source === 'auto' && el.value === state.value)) {
+      el.value = next; dates.set(id, { source: 'auto', value: next });
+    }
+  }
+  function trackDate(event) {
+    const el = event.target;
+    if (el?.type === 'date' && el.id && !restoring) dates.set(el.id, { source: 'manual', value: el.value });
+  }
+  function autoDates() {
+    const ida = value('p-data-ida');
+    for (const direction of ['ida', 'volta']) {
+      const departure = value('p-data-' + direction);
+      const arrivalId = 'p-data-chegada-' + direction;
+      let inferred = departure;
+      const suffix = direction === 'ida' ? '' : '-v';
+      const [from,to] = proposalRoute(direction);
+      const depTime = value('p-hora-dep' + suffix), arrTime = value('p-hora-cheg' + suffix);
+      if (departure && depTime && arrTime && zone(from) && zone(to)) {
+        const choices = [-1,0,1,2].flatMap(delta => {
+          const d = new Date(departure + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + delta);
+          const candidate = d.toISOString().slice(0,10);
+          try { const result = FlightTime.elapsed(point(from,departure,depTime),point(to,candidate,arrTime));
+            return result.minutes <= 18*60 ? [{date:candidate,minutes:result.minutes}] : [];
+          } catch { return []; }
+        });
+        if (choices.length) inferred = choices.sort((a,b) => a.minutes-b.minutes)[0].date;
+      }
+      setAuto(arrivalId, inferred);
+    }
+    const chegadaIda = value('p-data-chegada-ida');
+    setAuto('p-data-volta', chegadaIda || ida);
+    setAuto('p-data-chegada-volta', value('p-data-volta'));
+    for (const direction of ['ida', 'volta']) {
+      let known = value('p-data-' + direction);
+      for (let n = 1; n <= 3; n++) {
+        const prefix = 'p-conexao-' + direction + n;
+        setAuto(prefix + '-chegada-data', known);
+        setAuto(prefix + '-saida-data', value(prefix + '-chegada-data'));
+        known = value(prefix + '-saida-data') || known;
+      }
+    }
+    for (const direction of ['ida', 'volta']) {
+      const p = 'v-' + direction;
+      // Flight dates are seeded only when a flight itself has been entered.
+      const hasFirst = [1,2].some(n => value(p+'-orig'+n) || value(p+'-dest'+n) || value(p+'-hora-dep'+n) || value(p+'-hora-cheg'+n));
+      if (!hasFirst) continue;
+      setAuto(p+'-data-dep1', direction === 'ida' ? ida : value('v-ida-data-cheg2') || value('v-ida-data-cheg1') || chegadaIda || ida);
+      setAuto(p+'-data-cheg1', value(p+'-data-dep1'));
+      if (value(p+'-parada') === 'escala') {
+        setAuto(p+'-data-dep2', value(p+'-data-cheg1'));
+        setAuto(p+'-data-cheg2', value(p+'-data-dep2'));
+      }
+    }
+  }
   const zone = airport => window.AIRPORT_TIMEZONES?.[FlightTime.airportCode(airport)];
   function field(parent, id, label, type, section) {
     const wrap = document.createElement('div'); wrap.className = 'field';
@@ -115,7 +175,7 @@
       const isConnection = () => value(p + '-parada') === 'escala';
       const points = n => [point(value(p + '-orig' + n), value(p + '-data-dep' + n), value(p + '-hora-dep' + n)),
         point(value(p + '-dest' + n), value(p + '-data-cheg' + n), value(p + '-hora-cheg' + n))];
-      const hasFlight = () => [1, 2].some(n => (n === 1 || isConnection()) && points(n).some(x => x.airport || x.date || x.time));
+      const hasFlight = () => [1, 2].some(n => (n === 1 || isConnection()) && points(n).some(x => x.airport || x.time));
       for (const n of [1, 2]) addGroup({ id: p + '-dur' + n, section: 'voucher',
         active: () => hasFlight() && (n === 1 || isConnection()), points: () => points(n), context: isConnection });
       addGroup({ id: p + '-esc-tempo', section: 'voucher', direction, connection: 1,
@@ -129,8 +189,13 @@
         .map(g => [g.id, { value: g.output.value, signature: signature(g) }])) };
   }
   function restore(section, saved) {
+    restoring = true;
     const data = saved?.version === 1 ? saved : null;
-    addedFields[section].forEach(id => { $(id).value = typeof data?.fields?.[id] === 'string' ? data.fields[id] : ''; });
+    const nativeDates = section === 'proposta' ? ['p-data-ida','p-data-volta'] :
+      ['v-ida-data-dep1','v-ida-data-cheg1','v-ida-data-dep2','v-ida-data-cheg2',
+        'v-volta-data-dep1','v-volta-data-cheg1','v-volta-data-dep2','v-volta-data-cheg2'];
+    nativeDates.forEach(id => dates.set(id, {source:'restored',value:value(id)}));
+    addedFields[section].forEach(id => { $(id).value = typeof data?.fields?.[id] === 'string' ? data.fields[id] : ''; dates.set(id, {source:'restored',value:$(id).value}); });
     groups.filter(g => g.section === section).forEach(g => {
       g.signature = null; g.toggle.checked = false; g.manualSignature = null; g.output.value = '';
       const manual = data?.manual?.[g.id];
@@ -138,13 +203,20 @@
         g.toggle.checked = true; g.output.value = manual.value; g.manualSignature = manual.signature;
       }
     });
-    refresh();
+    restoring = false; refresh();
+  }
+  function reset(section) {
+    restore(section);
+    if (section === 'proposta') { dates.clear(); setAuto('p-data-ida', localToday()); autoDates(); refresh(); }
   }
   function validate(section) {
     refresh();
     const active = groups.filter(g => g.section === section && g.active());
     // A connection may be omitted entirely. Partial schedules must never produce a guessed wait.
-    const invalid = active.find(g => !g.valid && (!g.connection || g.toggle.checked || g.points().some(p => p.date || p.time)));
+    const invalid = active.find(g => !g.valid && (!g.connection || g.toggle.checked ||
+      g.points().some(p => p.time) ||
+      (g.section === 'proposta' && ['chegada','saida'].some(part =>
+        dates.get('p-conexao-'+g.direction+g.connection+'-'+part+'-data')?.source === 'manual'))));
     if (invalid) return fail(invalid, 'Confira a duração: ' + invalid.status.textContent);
     // Verify the chronological order of explicit connection schedules in the complete itinerary.
     if (section === 'proposta') for (const direction of ['ida', 'volta']) {
@@ -173,10 +245,10 @@
     g.output.scrollIntoView({ block: 'center', behavior: 'smooth' });
     g.output.focus(); return false;
   }
-  window.TimingUI = { refresh, snapshot, restore, validate };
+  window.TimingUI = { refresh, snapshot, restore, reset, validate };
   document.addEventListener('DOMContentLoaded', () => {
-    initProposal(); initVoucher(); refresh(); window.TimingUI.ready = true;
-    document.addEventListener('input', refresh);
-    document.addEventListener('change', refresh);
+    initProposal(); initVoucher(); setAuto('p-data-ida', localToday()); autoDates(); refresh(); window.TimingUI.ready = true;
+    document.addEventListener('input', event => { trackDate(event); autoDates(); refresh(); });
+    document.addEventListener('change', event => { trackDate(event); autoDates(); refresh(); });
   });
 })();

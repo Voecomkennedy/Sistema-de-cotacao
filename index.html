@@ -1260,7 +1260,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid var
 <div class="tab-panel" id="panel-proposta">
 <main>
   <h2>Proposta Completa</h2>
-  <p class="subtitle">Preencha hotel + aereo + valores. Gera pagina para salvar como PDF.</p>
+  <p class="subtitle">Preencha voos e valores para baixar a proposta em PDF.</p>
 
   <!-- Cliente -->
   <div class="card">
@@ -1400,6 +1400,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid var
         <label for="p-classe">Classe</label>
         <select id="p-classe">
           <option value="Economica">Economica</option>
+          <option value="Econômica Light">Econômica Light</option>
           <option value="Executiva">Executiva</option>
           <option value="Primeira Classe">Primeira Classe</option>
         </select>
@@ -3405,7 +3406,7 @@ function restaurarProposta(d) {
   // Garante que a aba Proposta esta visivel ANTES de preencher — sem isso alguns toggles
   // podem falhar porque os elementos nao estao no DOM ativo.
   try { switchTab('proposta'); } catch(e) { console.warn('[VoeComKennedy] switchTab proposta:', e); }
-  try { limparProposta(); } catch(e) { console.warn('[VoeComKennedy] limparProposta:', e); }
+  try { limparProposta(true); } catch(e) { console.warn('[VoeComKennedy] limparProposta:', e); }
   const tryRun = (label, fn) => { try { fn(); } catch(e) { console.warn('[VoeComKennedy] restaurarProposta ['+label+']:', e); } };
   const sv = (id, v) => { const el = document.getElementById(id); if(el && v != null) el.value = v; };
   const sc = (id, v) => { const el = document.getElementById(id); if(el) el.checked = !!v; };
@@ -5124,7 +5125,8 @@ function onPaxChange() {
   calcJurosCartao();
 }
 
-function gerarProposta() {
+async function gerarProposta() {
+  if (abrirProposta.busy) return;
   if (!window.TimingUI?.ready) { showToast('O cálculo de fusos não carregou. Atualize a página antes de gerar.'); return; }
   if (!TimingUI.validate('proposta')) return;
   const cliente = document.getElementById('p-cliente').value.trim();
@@ -5310,32 +5312,30 @@ function gerarProposta() {
 
   dados.dataIdaISO   = dataIdaISO;
   dados.dataVoltaISO = dataVoltaISO;
-  // Abre o PDF primeiro — garantido mesmo se o historico falhar
-  if (!abrirProposta(dados)) return;
+  if (!(await abrirProposta(dados))) return;
   try {
     addHist({ tipo: 'proposta', nome: cliente, subtitulo: orig.split('\u2014')[0].trim() + ' \u2192 ' + dest.split('\u2014')[0].trim() + ' \u2014 ' + totalPax + ' pax', url: 'PROPOSTA \u2014 ' + cliente + ' \u2014 ' + orig + ' \u2192 ' + dest + ' (' + dados.dataIda + ')', dados: JSON.parse(JSON.stringify(dados)) });
     updateHistBadge();
   } catch(e) { console.warn('Historico nao salvo:', e); }
 }
 
-function abrirProposta(d) {
-  if (!window.ProposalPDF) { showToast('O modelo da proposta não carregou. Atualize a página.'); return false; }
-  let html;
+async function abrirProposta(d) {
+  if (abrirProposta.busy) return false;
+  if (!window.ProposalPDF || !window.ProposalDownload) { showToast('O gerador de PDF não carregou. Atualize a página.'); return false; }
+  abrirProposta.busy = true;
   try {
-    html = ProposalPDF.render(d, {
-      baseUrl: new URL('.', location.href).href,
+    await ProposalDownload.download(d, {
       cardDivisor: JUROS_TAB[Number(d.parcelas)]?.divisor
     });
-  } catch (error) { showToast(error.message); return false; }
-  const url = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
-  const preview = window.open(url, '_blank');
-  if (!preview) { URL.revokeObjectURL(url); showToast('Permita abrir a prévia da proposta neste navegador.'); return false; }
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
-  showToast('Proposta A4 aberta. Confira e use Salvar / imprimir PDF.');
-  return true;
+    showToast('PDF da proposta baixado. Confira o arquivo antes de enviar.');
+    return true;
+  } catch (error) {
+    showToast('Não foi possível baixar o PDF: '+error.message);
+    return false;
+  } finally { abrirProposta.busy = false; }
 }
 
-function limparProposta() {
+function limparProposta(restaurando = false) {
   const ids = ['p-cliente','p-orig','p-dest','p-voo-ida','p-hora-dep','p-hora-cheg',
     'p-duracao-ida','p-escala-cidade','p-escala-tempo','p-voo-ida2',
     'p-troca-ida1-dest','p-escala-cidade2','p-escala-tempo2','p-voo-ida3','p-troca-ida2-dest',
@@ -5383,7 +5383,8 @@ function limparProposta() {
   calcLimpar();
   document.getElementById('p-somente-ida').checked = false;
   toggleSomenteIda();
-  window.TimingUI?.restore('proposta');
+  if (restaurando) window.TimingUI?.restore('proposta');
+  else window.TimingUI?.reset('proposta');
 }
 
 // ── ABA VOUCHER ───────────────────────────────────────────────────────────────
@@ -5933,8 +5934,11 @@ document.getElementById('baseUrl').addEventListener('change', function() {
 </script>
 <script src="js/airport-timezones.js?v=20260924-1"></script>
 <script src="js/flight-time.js?v=20260924-1"></script>
-<script src="js/timing-form.js?v=20260924-1"></script>
+<script src="js/timing-form.js?v=20261003-1"></script>
 <script src="js/airline-logos.js?v=20260924-1"></script>
 <script src="js/proposal-pdf.js?v=20260924-1"></script>
+<script src="assets/vendor/pdfmake.min.js"></script>
+<script src="assets/vendor/vfs_fonts.js"></script>
+<script src="js/proposal-download.js?v=20261003-3"></script>
 </body>
 </html>
