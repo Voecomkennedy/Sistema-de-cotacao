@@ -4,8 +4,10 @@ const fs=require('node:fs');
 const path=require('node:path');
 const {JSDOM}=require('jsdom');
 const pdfMake=require('../assets/vendor/pdfmake.min.js');
-const {definition}=require('../js/proposal-download.js');
+const {definition,fontDefinitions,fontFiles}=require('../js/proposal-download.js');
 pdfMake.addVirtualFileSystem(require('../assets/vendor/vfs_fonts.js'));
+pdfMake.addVirtualFileSystem(Object.fromEntries(fontFiles.map(file=>[file,fs.readFileSync(path.resolve(__dirname,'../assets/fonts/pdf',file)).toString('base64')])));
+pdfMake.addFonts(fontDefinitions);
 test('PDF is generated as selectable A4 bytes with all quoted amounts',async()=>{
  const d={cliente:'Cotação de teste',orig:'BSB — Brasília',dest:'POA — Porto Alegre',cia:'LATAM',classe:'Econômica Light',adultos:2,totalPax:2,
  dataIdaISO:'2026-10-27',dataVoltaISO:'2026-11-02',depIda:'10:10',chegIda:'12:45',durIda:'2h 35m',depVolta:'05:15',chegVolta:'07:45',durVolta:'2h 30m',

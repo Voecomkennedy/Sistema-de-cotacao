@@ -3,7 +3,9 @@ const path = require('node:path');
 const pdfMake = require('../assets/vendor/pdfmake.min.js');
 pdfMake.addVirtualFileSystem(require('../assets/vendor/vfs_fonts.js'));
 global.ProposalPDF = require('../js/proposal-pdf.js');
-const {definition} = require('../js/proposal-download.js');
+const {definition,fontDefinitions,fontFiles} = require('../js/proposal-download.js');
+pdfMake.addVirtualFileSystem(Object.fromEntries(fontFiles.map(file=>[file,fs.readFileSync(path.resolve(__dirname,'../assets/fonts/pdf',file)).toString('base64')])));
+pdfMake.addFonts(fontDefinitions);
 const d = {
   cliente:'Cotação de teste', adultos:2, criancas:0, bebes:0, totalPax:2,
   orig:'BSB — Brasília', dest:'POA — Porto Alegre', cia:'LATAM', ciaVolta:'LATAM',
