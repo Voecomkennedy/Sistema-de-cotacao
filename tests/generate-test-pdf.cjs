@@ -12,7 +12,7 @@ const d = {
   depVolta:'05:15', chegVolta:'07:45', durVolta:'2h 30m', paradaVolta:'direto',
   timing:{fields:{'p-data-chegada-ida':'2026-10-27','p-data-chegada-volta':'2026-11-02'}},
   bagMao:'Inclusa conforme tarifa Light',bagDespIda:'Não inclusa',bagDespVolta:'Não inclusa',
-  valPix:'R$ 2.389,22',valTotalPix:'R$ 4.778,43',valCartaoBase:'R$ 5.277,70',
+  valPix:'R$ 2.389,22',valTotalPix:'4778,43',valCartaoBase:'5277,70',
   valCartaoFinal:'R$ 5.277,70',valParcela:'R$ 527,77',parcelas:'10',comJuros:false,
   geradoEm:new Intl.DateTimeFormat('pt-BR',{dateStyle:'long'}).format(new Date())
 };

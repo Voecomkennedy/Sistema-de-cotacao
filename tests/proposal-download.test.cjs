@@ -9,11 +9,11 @@ pdfMake.addVirtualFileSystem(require('../assets/vendor/vfs_fonts.js'));
 test('PDF is generated as selectable A4 bytes with all quoted amounts',async()=>{
  const d={cliente:'Cotação de teste',orig:'BSB — Brasília',dest:'POA — Porto Alegre',cia:'LATAM',classe:'Econômica Light',adultos:2,totalPax:2,
  dataIdaISO:'2026-10-27',dataVoltaISO:'2026-11-02',depIda:'10:10',chegIda:'12:45',durIda:'2h 35m',depVolta:'05:15',chegVolta:'07:45',durVolta:'2h 30m',
- valPix:'R$ 2.389,22',valTotalPix:'R$ 4.778,43',valCartaoBase:'R$ 5.277,70',valCartaoFinal:'R$ 5.277,70',valParcela:'R$ 527,77',parcelas:'10',comJuros:false};
+ valPix:'R$ 2.389,22',valTotalPix:'4778,43',valCartaoBase:'5277,70',valCartaoFinal:'R$ 5.277,70',valParcela:'R$ 527,77',parcelas:'10',comJuros:false};
  const doc=definition(d);
  assert.equal(doc.pageSize,'A4');
- assert.match(JSON.stringify(doc),/R\$ 4.778,43/);
- assert.match(JSON.stringify(doc),/R\$ 5.277,70/);
+ assert.match(JSON.stringify(doc),/R\$\s4.778,43/);
+ assert.match(JSON.stringify(doc),/R\$\s5.277,70/);
  const buffer=await new Promise(resolve=>pdfMake.createPdf(doc).getBuffer(resolve));
  assert.equal(buffer.subarray(0,4).toString(),'%PDF');
  assert.ok(buffer.length>10000);

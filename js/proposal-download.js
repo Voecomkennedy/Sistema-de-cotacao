@@ -3,6 +3,12 @@
   'use strict';
   const navy = '#0A1931', blue = '#1A3D63', sky = '#4A7FA7', pale = '#F6FAFD', muted = '#526477';
   const brl = n => Number(n).toLocaleString('pt-BR', {style:'currency',currency:'BRL'});
+  const moneyInput = value => {
+    if (!value) return '';
+    const raw=String(value).replace(/R\$|\s/g,'');
+    const amount=Number(raw.includes(',') ? raw.replace(/\./g,'').replace(',','.') : raw);
+    return Number.isFinite(amount) ? brl(amount) : String(value);
+  };
   const code = text => String(text || '').split(/\s*[—–]\s*/)[0];
   const city = text => String(text || '').split(/\s*[—–]\s*/)[1] || code(text);
   const date = iso => /^\d{4}-\d{2}-\d{2}$/.test(iso || '') ?
@@ -70,11 +76,11 @@
       }
     } else {
       const card=d.valCartaoBase ? (Number(d.parcelas)>1 && d.valParcela ?
-        d.parcelas+'x de '+d.valParcela+' · total '+(d.valCartaoFinal||d.valCartaoBase) :
-        d.valCartaoFinal||d.valCartaoBase) : '';
+        d.parcelas+'x de '+moneyInput(d.valParcela)+' · total '+moneyInput(d.valCartaoFinal||d.valCartaoBase) :
+        moneyInput(d.valCartaoFinal||d.valCartaoBase)) : '';
       content.push({table:{widths:['*','*','*'],body:[[
-        valueCard('Por pessoa no Pix',d.valPix || '—',pax+' passageiro'+(pax>1?'s':'')),
-        valueCard('Total no Pix',d.valTotalPix || '—','Todos os passageiros'),
+        valueCard('Por pessoa no Pix',moneyInput(d.valPix) || '—',pax+' passageiro'+(pax>1?'s':'')),
+        valueCard('Total no Pix',moneyInput(d.valTotalPix) || '—','Todos os passageiros'),
         valueCard('Cartão de crédito',card || '—','Todos os passageiros')
       ]]},layout:{hLineColor:()=> '#B3CFE5',vLineColor:()=> '#B3CFE5',paddingLeft:()=>12,paddingRight:()=>12,paddingTop:()=>12,paddingBottom:()=>12}});
     }
