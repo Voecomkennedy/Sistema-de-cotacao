@@ -56,7 +56,7 @@ test('snapshot stores dates and reviewed manual values; old records cannot retai
  a.w.TimingUI.restore('proposta',JSON.parse(JSON.stringify(saved)));assert.equal(a.el('p-data-chegada-ida').value,'2027-02-23');assert.equal(a.el('p-duracao-ida').value,'17h 00m');assert.equal(a.w.TimingUI.validate('proposta'),true);
  a.w.restaurarProposta({orig:'GRU',dest:'LAS',somenteIda:true,dataIdaISO:'2027-02-22',depIda:'23:10',chegIda:'11:03',durIda:'11h 53m'});
  assert.equal(a.el('p-duracao-ida').value,'');assert.equal(a.el('p-somente-ida').checked,true);assert.equal(a.w.TimingUI.validate('proposta'),false);
- a.w.limparProposta();assert.equal(a.el('p-data-chegada-ida').value,'');assert.equal(a.el('p-duracao-ida-manual').checked,false);
+ a.w.limparProposta();assert.equal(a.el('p-data-chegada-ida').value,a.el('p-data-ida').value);assert.equal(a.el('p-duracao-ida-manual').checked,false);
  }finally{await Promise.resolve();a.dom.window.close();}
 });
 test('voucher legs and wait use their own airports and dates; hotel-only voucher stays valid',async()=>{
@@ -88,4 +88,36 @@ test('date-line round trip can start its return on the previous local calendar d
  assert.equal(a.el('p-data-volta').min,'');assert.equal(a.w.TimingUI.validate('proposta'),true);
  a.set('p-hora-dep-v','15:00');assert.equal(a.w.TimingUI.validate('proposta'),false);
  }finally{await Promise.resolve();a.dom.window.close();}
+});
+test('fresh and reset proposal dates use the device local day, while manual and restored dates stay owned',async()=>{
+ const a=await app();try{
+ const now=new Date(), today=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');
+ assert.equal(a.el('p-data-ida').value,today);
+ assert.equal(a.el('p-data-volta').value,today);
+ a.set('p-data-ida','2027-01-10');
+ assert.equal(a.el('p-data-chegada-ida').value,'2027-01-10');
+ assert.equal(a.el('p-data-volta').value,'2027-01-10');
+ a.set('p-data-volta','2027-01-20');
+ a.set('p-data-ida','2027-01-12');
+ assert.equal(a.el('p-data-volta').value,'2027-01-20');
+ a.w.limparProposta();
+ assert.equal(a.el('p-data-ida').value,today);
+ a.w.restaurarProposta({cliente:'Antiga',dataIdaISO:'2027-02-10',dataVoltaISO:'2027-02-18',somenteIda:false});
+ assert.equal(a.el('p-data-ida').value,'2027-02-10');
+ assert.equal(a.el('p-data-volta').value,'2027-02-18');
+ assert.equal(a.el('p-data-chegada-ida').value,'');
+ }finally{a.dom.window.close();}
+});
+test('direct overnight date is inferred, and connection defaults never fabricate times or activate an empty wait',async()=>{
+ const a=await app();try{
+ for(const [id,v] of Object.entries({'p-orig':'BSB','p-dest':'POA','p-data-ida':'2026-10-27','p-hora-dep':'23:10','p-hora-cheg':'01:45','p-somente-ida':true}))a.set(id,v);
+ assert.equal(a.el('p-data-chegada-ida').value,'2026-10-28');
+ a.set('p-parada-ida','2escalas');
+ assert.equal(a.el('p-conexao-ida1-chegada-data').value,'2026-10-27');
+ assert.equal(a.el('p-conexao-ida1-chegada-hora').value,'');
+ assert.equal(a.el('p-conexao-ida2-saida-hora').value,'');
+ assert.equal(a.w.TimingUI.validate('proposta'),true);
+ a.set('p-conexao-ida1-chegada-data','2026-10-27');
+ assert.equal(a.w.TimingUI.validate('proposta'),false);
+ }finally{a.dom.window.close();}
 });
